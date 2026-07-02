@@ -1,5 +1,6 @@
 /build/
 /build-proton-compat/
+/build-proton-compat-hands/
 /build-vs/
 /build-vs-aerv2/
 /build-cuda/

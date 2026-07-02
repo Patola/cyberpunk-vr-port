@@ -90,6 +90,20 @@ The output DLL is:
 build-proton-compat/bin/dxgi.dll
 ```
 
+`CyberpunkVR_Hands.dll` is not part of the current Linux MinGW build. It is a
+separate RED4ext plugin and uses RED4ext generated C++ engine layouts that assume
+MSVC ABI class layout. GCC/MinGW reuses C++ base-class tail padding differently;
+for example, RED4ext expects some derived fields after a `0x10` base, while
+GCC places them at `0x0c`. Do not bypass those asserts for runtime testing: a
+DLL that compiles with the wrong layouts is likely to crash or corrupt state.
+
+A full avatar/hands build therefore needs either:
+
+- an MSVC-ABI cross toolchain/sysroot usable from Linux, such as `clang-cl` plus
+  compatible Windows SDK, CRT and C++ standard-library inputs; or
+- a deeper RED4ext plugin portability pass that avoids direct typed access to
+  MSVC-layout engine classes on the MinGW path.
+
 ## Rebase audit
 
 After rebasing from upstream, run:
