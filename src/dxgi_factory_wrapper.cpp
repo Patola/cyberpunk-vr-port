@@ -1,6 +1,7 @@
 #include "dxgi_factory_wrapper.h"
 #include "imgui_overlay.h"
 #include "ngx_hook.h"
+#include "proton_compat.h"
 #include <cstdint>
 #include <cstdio>
 #include <unordered_map>
@@ -1360,6 +1361,13 @@ void InstallSwapchainHooks(IDXGISwapChain* swapChain) {
 // DRED initializer at each CreateDXGIFactory* entry (runs before any D3D12
 // device is created — required for breadcrumbs/page-fault data to populate).
 extern "C" void CyberpunkVRPort_EnableDredOnce() {
+    if (!CPVR_ShouldEnableDred()) {
+        static std::once_flag s_dredDisabledLog;
+        std::call_once(s_dredDisabledLog, []() {
+            Log("[DRED] Disabled by Proton compatibility policy. Set CPVR_ENABLE_DRED=1 to force-enable.\n");
+        });
+        return;
+    }
     EnableDredOnce();
 }
 

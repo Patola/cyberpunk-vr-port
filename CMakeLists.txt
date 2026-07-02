@@ -45,6 +45,7 @@ target_include_directories(imgui PUBLIC
 
 add_library(dxgi SHARED
     src/dxgi_proxy.cpp
+    src/proton_compat.cpp
     src/openxr_manager.cpp
     src/optical_flow_d3d12.cpp
     src/dxgi_factory_wrapper.cpp
@@ -92,8 +93,8 @@ target_include_directories(dxgi PRIVATE
 
 # ---- Optional CUDA / NvOF CUDA backend (AER V2 "эталон" path) ----
 # When the CUDA Toolkit is present we add the NvOFCuda backend + compile the
-# warp kernel (.cu). Without CUDA the project still builds — the AER V2
-# pipeline stub returns false and OpenXRManager falls back to AER legacy.
+# warp kernel (.cu). Without CUDA the project still builds; NVIDIA interop
+# simply stays unavailable and OpenXRManager falls back to the legacy AER path.
 option(AER_V2_NVOF "Enable NvOF CUDA backend for AER V2" ON)
 if(AER_V2_NVOF)
     find_package(CUDAToolkit QUIET)
@@ -134,7 +135,7 @@ if(AER_V2_NVOF)
         endforeach()
         message(STATUS "AER V2 NvOF: ENABLED (CUDA ${CUDAToolkit_VERSION})")
     else()
-        message(STATUS "AER V2 NvOF: DISABLED (CUDA Toolkit not found; fallback to D3D12-compute)")
+        message(STATUS "AER V2 NvOF: DISABLED (CUDA Toolkit not found; legacy AER path remains available)")
     endif()
 endif()
 

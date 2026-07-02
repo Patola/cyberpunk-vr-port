@@ -17,7 +17,7 @@ Repository: <https://github.com/dariulone/cyberpunk-vr-port>
   FOV-based projection and world-scale / IPD controls.
 - **AER V2 reprojection** — per-eye / intermediate frames synthesised from the
   game's mono output via NVIDIA Optical Flow + a depth-aware warp (unified
-  producer, late IPD). Automatic D3D12-compute fallback without CUDA.
+  producer, late IPD). Non-CUDA builds fall back to the legacy AER path.
 - **Full-body VR avatar** (VRIK) — body under the HMD, arm-length
   calibration, leg IK, real-life squat. Hands are with the controllers.
 - **Decoupled VR weapon aim** — bullets follow the real weapon muzzle, not the
@@ -35,6 +35,8 @@ Repository: <https://github.com/dariulone/cyberpunk-vr-port>
   selector; quiet-by-default logging with a verbose toggle.
 
 See [`docs/`](docs/) for engineering notes (e.g. the stereo R&D writeup).
+Linux/Proton compatibility notes for this fork live in
+[`docs/proton-compat.md`](docs/proton-compat.md).
 
 ## Requirements
 

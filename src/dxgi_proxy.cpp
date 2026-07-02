@@ -12,6 +12,7 @@
 #include "live_controls_ui.h"
 #include "launcher_dialog.h"
 #include "openxr_manager.h"
+#include "proton_compat.h"
 #include "runtime_fov_correction.h"
 #include <RED4ext/RED4ext.hpp>
 #include <RED4ext/Scripting/Natives/ScriptGameInstance.hpp>
@@ -233,7 +234,7 @@ static void EnsureLiveControlFileExists() {
     fprintf(file, "xr_menu_rect=0\n");
     fprintf(file, "xr_menu_fov=65.0\n");
     fprintf(file, "xr_3dof_movement=1\n");
-    fprintf(file, "xr_dlss_matrix_hook=1\n");
+    fprintf(file, "xr_dlss_matrix_hook=%d\n", CPVR_DefaultDlssMatrixHook() ? 1 : 0);
     fprintf(file, "xr_dlss_slot_mode=0\n");
     fprintf(file, "xr_dlss_log_stride=600\n");
     fprintf(file, "xr_aer_pair_gate=1\n");
@@ -264,7 +265,7 @@ static void EnsureLiveControlFileExists() {
     // before our depth copy. Lets the compositor do depth-aware reprojection
     // → fixes far-building shift on head turn (parallax-correct timewarp
     // instead of orientation-only). Users on broken runtimes can set 0.
-    fprintf(file, "xr_depth_submit=1\n");
+    fprintf(file, "xr_depth_submit=%d\n", CPVR_DefaultDepthSubmit() ? 1 : 0);
     fprintf(file, "xr_movement_control=0\n");
     fprintf(file, "xr_disable_mouse_y=1\n");
     fprintf(file, "xr_xinput_hook=1\n");
@@ -453,7 +454,7 @@ static void PollLiveControls() {
     float xrPitchScale = 1.35f;
     int xrSyncSequential = 1;
     int xr3DofMovement = 1;
-    int xrDLSSMatrixHook = 1;
+    int xrDLSSMatrixHook = CPVR_DefaultDlssMatrixHook() ? 1 : 0;
     int xrDLSSSlotMode = 0;
     int xrDLSSLogStride = 600;
     int xrAERPairGate = 1;
@@ -477,7 +478,7 @@ static void PollLiveControls() {
     // Default ON: cross-queue Signal hook now serializes our depth read
     // against the game's render writers. Compositor depth-aware reprojection
     // fixes far-object shift on head turn. Users can still override via ini.
-    int xrDepthSubmit = 1;
+    int xrDepthSubmit = CPVR_DefaultDepthSubmit() ? 1 : 0;
     int xrMovementControl = g_liveControls.xrMovementControl;
     int xrDisableMouseY = g_liveControls.xrDisableMouseY;
     int xrXInputHook = g_liveControls.xrXInputHook != 0 ? g_liveControls.xrXInputHook : 1;
@@ -821,6 +822,16 @@ static void PollLiveControls() {
     const int prevXrMonoSubmit = g_liveControls.xrMonoSubmit;
     const int prevXrAERSubmit = g_liveControls.xrAERSubmit;
     const int prevXrAERStartEye = g_liveControls.xrAERStartEye;
+    const int effectiveDLSSMatrixHook = xrDLSSMatrixHook != 0 && CPVR_ShouldInstallDlssPatternHooks() ? 1 : 0;
+    const int requestedAERV2 = xrAERV2 != 0 ? 1 : 0;
+    const int effectiveAERV2 = requestedAERV2 && CPVR_ShouldEnableNvidiaInterop() ? 1 : 0;
+    if (requestedAERV2 && !effectiveAERV2) {
+        static bool s_loggedAERV2Policy = false;
+        if (!s_loggedAERV2Policy) {
+            s_loggedAERV2Policy = true;
+            Log("Proton compat: xr_aer_v2 requested but NVIDIA interop is disabled. Set CPVR_ENABLE_NVIDIA_INTEROP=1 to force-enable.\n");
+        }
+    }
     const bool changed = g_liveControls.xrHeadOffsetX != xrHeadOffsetX ||
         g_liveControls.xrHeadOffsetY != xrHeadOffsetY ||
         g_liveControls.xrHeadOffsetZ != xrHeadOffsetZ ||
@@ -831,7 +842,7 @@ static void PollLiveControls() {
         g_liveControls.xrMenuRect != xrMenuRect ||
         g_liveControls.xrMenuFov != xrMenuFov ||
         g_liveControls.xr3DofMovement != xr3DofMovement ||
-        g_liveControls.xrDLSSMatrixHook != xrDLSSMatrixHook ||
+        g_liveControls.xrDLSSMatrixHook != effectiveDLSSMatrixHook ||
         g_liveControls.xrDLSSSlotMode != xrDLSSSlotMode ||
         g_liveControls.xrDLSSLogStride != xrDLSSLogStride ||
         g_liveControls.xrAERPairGate != xrAERPairGate ||
@@ -848,7 +859,7 @@ static void PollLiveControls() {
         g_liveControls.xrPairLock != xrPairLock ||
         g_liveControls.xrRenderPoseSubmit != xrRenderPoseSubmit ||
         g_liveControls.xrAERHalfRate != xrAERHalfRate ||
-        g_liveControls.xrAERV2 != xrAERV2 ||
+        g_liveControls.xrAERV2 != effectiveAERV2 ||
         g_liveControls.xrRuntime != xrRuntime ||
         g_liveControls.xrDepthSubmit != xrDepthSubmit;
 
@@ -862,7 +873,7 @@ static void PollLiveControls() {
     g_liveControls.xrMenuRect = xrMenuRect;
     g_liveControls.xrMenuFov = xrMenuFov;
     g_liveControls.xr3DofMovement = xr3DofMovement;
-    g_liveControls.xrDLSSMatrixHook = xrDLSSMatrixHook;
+    g_liveControls.xrDLSSMatrixHook = effectiveDLSSMatrixHook;
     g_liveControls.xrDLSSSlotMode = xrDLSSSlotMode;
     g_liveControls.xrDLSSLogStride = xrDLSSLogStride > 0 ? xrDLSSLogStride : 0;
     g_liveControls.xrAERPairGate = xrAERPairGate;
@@ -879,7 +890,7 @@ static void PollLiveControls() {
     g_liveControls.xrPairLock = xrPairLock != 0 ? 1 : 0;
     g_liveControls.xrRenderPoseSubmit = xrRenderPoseSubmit != 0 ? 1 : 0;
     g_liveControls.xrAERHalfRate = xrAERHalfRate != 0 ? 1 : 0;
-    g_liveControls.xrAERV2 = xrAERV2 != 0 ? 1 : 0;
+    g_liveControls.xrAERV2 = effectiveAERV2;
     g_liveControls.xrPoseLag = xrPoseLag;
     g_liveControls.xrRuntime = ClampRuntimeMode(xrRuntime);
     g_liveControls.xrDepthSubmit = xrDepthSubmit != 0 ? 1 : 0;
@@ -5808,11 +5819,15 @@ DWORD WINAPI WorkerThread(LPVOID) {
     bool h10 = InstallSettingsResHook();
     if (g_verboseLog || !h10) Log("SettingsRes hook result: %s\n", h10 ? "SUCCESS" : "FAILED");
 
-    bool h11 = InstallDLSSResHook();
-    if (g_verboseLog || !h11) Log("DLSSRes hook result: %s\n", h11 ? "SUCCESS" : "FAILED");
+    if (CPVR_ShouldInstallDlssPatternHooks()) {
+        bool h11 = InstallDLSSResHook();
+        if (g_verboseLog || !h11) Log("DLSSRes hook result: %s\n", h11 ? "SUCCESS" : "FAILED");
 
-    bool h12 = InstallDLSSMatricesHook();
-    if (g_verboseLog || !h12) Log("DLSSMatrices hook result: %s\n", h12 ? "SUCCESS" : "FAILED");
+        bool h12 = InstallDLSSMatricesHook();
+        if (g_verboseLog || !h12) Log("DLSSMatrices hook result: %s\n", h12 ? "SUCCESS" : "FAILED");
+    } else {
+        Log("Proton compat: DLSS pattern hooks disabled. Set CPVR_ENABLE_DLSS_PATTERN_HOOKS=1 to force-enable.\n");
+    }
 
     if (kEnableNativeSetterTracers != 0) {
         bool h7 = InstallNativeSetterMetaWriteHook();
@@ -6067,11 +6082,12 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
         DisableThreadLibraryCalls(hinst);
         InitRuntimePaths();
 
-        // Always use system dxgi.dll for exports
-        char path[MAX_PATH];
-        GetSystemDirectoryA(path, MAX_PATH);
-        strcat_s(path, "\\dxgi.dll");
-        g_realDxgi = LoadLibraryA(path);
+        g_realDxgi = CPVR_LoadRealDxgi(g_backendModulePath, sizeof(g_backendModulePath));
+        Log("Proton compat: wine=%d enabled=%d real_dxgi=\"%s\" handle=%p\n",
+            CPVR_IsWine() ? 1 : 0,
+            CPVR_ProtonCompatEnabled() ? 1 : 0,
+            g_backendModulePath[0] ? g_backendModulePath : "<unresolved>",
+            g_realDxgi);
 
         HANDLE h = CreateThread(nullptr, 0, WorkerThread, nullptr, 0, nullptr);
         if (h) CloseHandle(h);
@@ -6177,5 +6193,3 @@ extern "C" __declspec(dllexport) HRESULT WINAPI CreateDXGIFactory2(UINT Flags, R
         return p ? p(arg) : E_FAIL;
     }
 }
-
-

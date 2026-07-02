@@ -1,5 +1,6 @@
 #include "openxr_manager.h"
 #include "ngx_hook.h"
+#include "proton_compat.h"
 #include "runtime_fov_correction.h"
 #include <cstdarg>
 #include <cstdio>
@@ -294,6 +295,11 @@ static bool TryGetSteamVRRuntimeJsonFromRegistry(char* outJsonPath, size_t outJs
 
 static void ConfigurePreferredOpenXRRuntime() {
     if (GetXrRuntimeMode() != 1) {
+        return;
+    }
+
+    if (!CPVR_ShouldForceSteamVrRuntime()) {
+        Log("OpenXRManager: xr_runtime=1 requested, but Proton compatibility is leaving the active OpenXR runtime untouched. Set CPVR_FORCE_STEAMVR_RUNTIME=1 to restore manifest forcing.\n");
         return;
     }
 
@@ -3004,7 +3010,7 @@ DWORD OpenXRManager::FrameThreadMain() {
             continue;
         }
 
-        if (GetXrRuntimeMode() == 1) {
+        if (GetXrRuntimeMode() == 1 && m_runtimeIsSteamVR.load(std::memory_order_relaxed)) {
             uint32_t startupWidth = 0;
             uint32_t startupHeight = 0;
             uint32_t startupFormat = 0;
