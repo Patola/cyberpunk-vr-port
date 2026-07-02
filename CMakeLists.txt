@@ -35,6 +35,11 @@ if(MINGW)
     set(RED4EXT_HEADER_ONLY ON CACHE BOOL "Use RED4ext header-only mode for MinGW cross-builds" FORCE)
 endif()
 
+set(CPVR_CASE_SENSITIVE_INCLUDE_SHIMS OFF)
+if(MINGW OR (MSVC AND CMAKE_HOST_UNIX))
+    set(CPVR_CASE_SENSITIVE_INCLUDE_SHIMS ON)
+endif()
+
 option(CPVR_ENABLE_NVOF_D3D12 "Build the NVIDIA Optical Flow D3D12 backend" ON)
 if(MINGW)
     set(CPVR_ENABLE_NVOF_D3D12 OFF CACHE BOOL "Build the NVIDIA Optical Flow D3D12 backend" FORCE)
@@ -129,11 +134,11 @@ target_include_directories(dxgi PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/externals/minhook/src
     ${CMAKE_CURRENT_SOURCE_DIR}/externals/minhook/src/hde
 )
-if(MINGW)
+if(CPVR_CASE_SENSITIVE_INCLUDE_SHIMS)
     target_include_directories(dxgi PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/cmake/mingw-include
     )
-    target_include_directories(RED4ext.SDK INTERFACE
+    target_include_directories(RED4ext.SDK PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/cmake/mingw-include
     )
 endif()

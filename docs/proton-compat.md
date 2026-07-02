@@ -63,10 +63,18 @@ An AMD-native quality path should be a later backend project. The clean shape is
 an upscaler-neutral motion-vector/depth telemetry layer first, then an AMD or
 shader-compute optical-flow/warp backend if needed.
 
-## Linux cross-build
+## Linux cross-builds
 
-The AMD/Proton-oriented MinGW build disables MSVC/NVIDIA-specific pieces that
-are not expected to work on this path:
+There are two Linux-hosted build paths:
+
+- MinGW is useful for a small `dxgi.dll` Proton smoke test.
+- `msvc-wine` plus `clang-cl` is the recommended path for a complete build,
+  because it keeps the MSVC C++ ABI required by RED4ext generated engine types.
+
+### MinGW smoke test
+
+The AMD/Proton-oriented MinGW build disables MSVC/NVIDIA-specific pieces that are
+not expected to work on this path:
 
 - RED4ext RTTI queries from the `dxgi.dll` proxy;
 - NVIDIA Optical Flow D3D12 backend;
@@ -90,19 +98,46 @@ The output DLL is:
 build-proton-compat/bin/dxgi.dll
 ```
 
-`CyberpunkVR_Hands.dll` is not part of the current Linux MinGW build. It is a
-separate RED4ext plugin and uses RED4ext generated C++ engine layouts that assume
-MSVC ABI class layout. GCC/MinGW reuses C++ base-class tail padding differently;
-for example, RED4ext expects some derived fields after a `0x10` base, while
-GCC places them at `0x0c`. Do not bypass those asserts for runtime testing: a
-DLL that compiles with the wrong layouts is likely to crash or corrupt state.
+`CyberpunkVR_Hands.dll` must not be built with GCC/MinGW for runtime testing. It
+is a separate RED4ext plugin and uses RED4ext generated C++ engine layouts that
+assume MSVC ABI class layout. GCC/MinGW reuses C++ base-class tail padding
+differently; for example, RED4ext expects some derived fields after a `0x10`
+base, while GCC places them at `0x0c`. Do not bypass those asserts for runtime
+testing: a DLL that compiles with the wrong layouts is likely to crash or corrupt
+state.
 
-A full avatar/hands build therefore needs either:
+### msvc-wine clang-cl build
 
-- an MSVC-ABI cross toolchain/sysroot usable from Linux, such as `clang-cl` plus
-  compatible Windows SDK, CRT and C++ standard-library inputs; or
-- a deeper RED4ext plugin portability pass that avoids direct typed access to
-  MSVC-layout engine classes on the MinGW path.
+On Arch Linux, install `msvc-wine-git` from AUR. This provides the MSVC headers,
+libraries, Windows SDK and CMake toolchain under `/opt/msvc`, while using native
+Linux `clang-cl`/`lld-link` to produce Windows PE DLLs with the MSVC ABI.
+
+Build both DLLs with:
+
+```sh
+./scripts/build-msvc-clang.sh
+```
+
+The output DLLs are:
+
+```text
+build-msvc-clang-dxgi/bin/dxgi.dll
+build-msvc-clang-hands/CyberpunkVR_Hands.dll
+```
+
+The script defaults to `CMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL` because the
+current OpenXR loader dependency is also built for the dynamic MSVC runtime. The
+resulting DLLs import `MSVCP140.dll`, `VCRUNTIME140.dll` and UCRT API DLLs. Under
+Proton, install the usual Visual C++ 2015-2022 runtime into the game prefix if
+those imports are not already satisfied by the game/mod stack.
+
+The `msvc-wine` path has been checked with a small ABI probe: `clang-cl` places
+derived fields after MSVC-style base-class tail padding, unlike GCC/MinGW. This
+is why it is viable for `CyberpunkVR_Hands.dll`.
+
+If static CRT linkage becomes important, revisit the OpenXR loader runtime
+setting at the same time. Mixing `/MT` objects with an `/MD` OpenXR loader fails
+the linker's runtime-library mismatch check.
 
 ## Rebase audit
 

@@ -10,6 +10,11 @@
 #include <RED4ext/Scripting/Natives/animRig.hpp>
 #include <RED4ext/Scripting/Natives/Generated/Vector4.hpp>
 #include <RED4ext/Scripting/Natives/Generated/Quaternion.hpp>
+#include <RED4ext/Scripting/Natives/Generated/C2dArray.hpp>
+#include <RED4ext/Scripting/Natives/Generated/anim/AnimNode_Base.hpp>
+#include <RED4ext/Scripting/Natives/Generated/anim/AnimNode_Root.hpp>
+#include <RED4ext/Scripting/Natives/Generated/anim/GenericAnimDatabase.hpp>
+#include <RED4ext/Scripting/Natives/Generated/anim/IRigIkSetup.hpp>
 #include <RED4ext/Scripting/Natives/Generated/anim/AnimGraph.hpp>
 #include <RED4ext/Scripting/Natives/Generated/anim/AnimFeature_IK.hpp>
 #include <RED4ext/Scripting/Natives/Generated/anim/AnimFeature_MeleeIKData.hpp>
@@ -1904,6 +1909,13 @@ static bool QueuePlayerEvent(const RED4ext::Handle<RED4ext::red::Event>& aEvent)
     return RED4ext::ExecuteFunction(playerEntity, func, nullptr, args);
 }
 
+template<typename T>
+static const RED4ext::Handle<RED4ext::red::Event>& AsEventHandle(const RED4ext::Handle<T>& aEvent) noexcept
+{
+    static_assert(std::is_base_of_v<RED4ext::red::Event, T>, "Event handle target must derive from red::Event.");
+    return reinterpret_cast<const RED4ext::Handle<RED4ext::red::Event>&>(aEvent);
+}
+
 static int32_t SetFloatInputDirect(const RED4ext::CName& aKey, float aValue)
 {
     auto* controller = FindPlayerAnimationController();
@@ -1927,7 +1939,7 @@ static int32_t QueueFloatInputEvent(const RED4ext::CName& aKey, float aValue)
     if (!evt)
         return -43;
 
-    return QueuePlayerEvent(static_cast<RED4ext::Handle<RED4ext::red::Event>>(evt)) ? 11 : -44;
+    return QueuePlayerEvent(AsEventHandle(evt)) ? 11 : -44;
 }
 
 static void AppendAnimFloatTestLog(const char* aRouteName, const RED4ext::CName& aKey, float aValue, int32_t aResult)
@@ -2123,9 +2135,9 @@ static int32_t QueueVectorInputEvents(const RED4ext::Vector4& aLeft, const RED4e
         return -20;
 
     int32_t queued = 0;
-    if (QueuePlayerEvent(static_cast<RED4ext::Handle<RED4ext::red::Event>>(leftEvt)))
+    if (QueuePlayerEvent(AsEventHandle(leftEvt)))
         ++queued;
-    if (QueuePlayerEvent(static_cast<RED4ext::Handle<RED4ext::red::Event>>(rightEvt)))
+    if (QueuePlayerEvent(AsEventHandle(rightEvt)))
         ++queued;
 
     return queued == 2 ? 6 : -21;
@@ -2138,7 +2150,7 @@ static int32_t QueueFeatureInputEvent(const RED4ext::CName& aFeatureName,
     if (!evt)
         return -22;
 
-    return QueuePlayerEvent(static_cast<RED4ext::Handle<RED4ext::red::Event>>(evt)) ? 7 : -23;
+    return QueuePlayerEvent(AsEventHandle(evt)) ? 7 : -23;
 }
 
 static int32_t QueueFeatureInputEvent(const RED4ext::CName& aFeatureName,
@@ -3354,8 +3366,10 @@ void RunIKTargetAddTest(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aF
     rightEvt->request.transitionOut = 0.0f;
     rightEvt->request.priority = 100;
 
-    const bool leftQueued = QueuePlayerEvent(static_cast<RED4ext::Handle<RED4ext::red::Event>>(RED4ext::Handle<RED4ext::ent::IKTargetAddEvent>(leftEvt)));
-    const bool rightQueued = QueuePlayerEvent(static_cast<RED4ext::Handle<RED4ext::red::Event>>(RED4ext::Handle<RED4ext::ent::IKTargetAddEvent>(rightEvt)));
+    RED4ext::Handle<RED4ext::ent::IKTargetAddEvent> leftHandle(leftEvt);
+    RED4ext::Handle<RED4ext::ent::IKTargetAddEvent> rightHandle(rightEvt);
+    const bool leftQueued = QueuePlayerEvent(AsEventHandle(leftHandle));
+    const bool rightQueued = QueuePlayerEvent(AsEventHandle(rightHandle));
 
     log << "leftQueued=" << (leftQueued ? 1 : 0) << " rightQueued=" << (rightQueued ? 1 : 0) << "\n";
     log << "leftOutRef id=" << leftEvt->outIKTargetRef.id << " part=" << leftEvt->outIKTargetRef.part.ToString() << "\n";

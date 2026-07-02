@@ -1,4 +1,5 @@
 /build/
+/build-msvc-clang-*/
 /build-proton-compat/
 /build-proton-compat-hands/
 /build-vs/
