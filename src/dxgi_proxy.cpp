@@ -231,7 +231,7 @@ static void EnsureLiveControlFileExists() {
     fprintf(file, "xr_head_offset_z=0.000\n");
     fprintf(file, "xr_recenter=0\n");
     fprintf(file, "xr_mono_submit=1\n");
-    fprintf(file, "xr_aer_submit=1\n");
+    fprintf(file, "xr_aer_submit=%d\n", CPVR_DefaultAERSubmit() ? 1 : 0);
     fprintf(file, "xr_force_fov=0\n");
     fprintf(file, "xr_menu_rect=0\n");
     fprintf(file, "xr_menu_fov=65.0\n");
@@ -446,7 +446,7 @@ static void PollLiveControls() {
     float xrHeadOffsetZ = 0.0f;
     int xrRecenter = 0;
     int xrMonoSubmit = 1;
-    int xrAERSubmit = 1;
+    int xrAERSubmit = CPVR_DefaultAERSubmit() ? 1 : 0;
     int xrWindowWidth = 0;
     int xrWindowHeight = 0;
     float xrForceFov = 0.0f;
@@ -1404,6 +1404,10 @@ extern "C" int GetPoseLag() {
 
 extern "C" int GetAERHalfRate() {
     return g_liveControls.xrAERHalfRate;
+}
+
+extern "C" int GetAnyOpenXRSubmitEnabled() {
+    return g_liveControls.xrMonoSubmit != 0 || g_liveControls.xrAERSubmit != 0;
 }
 
 extern "C" int GetAERV2Enabled() {
@@ -5748,6 +5752,49 @@ bool InstallXInputHook() {
     return false;
 }
 
+static uint32_t GetDiagnosticExecHookMask()
+{
+    constexpr uint32_t kCamera = 1u << 0;
+    constexpr uint32_t kProjection = 1u << 1;
+    constexpr uint32_t kMovement = 1u << 2;
+    constexpr uint32_t kSettings = 1u << 3;
+    constexpr uint32_t kAll = kCamera | kProjection | kMovement | kSettings;
+
+    char value[128]{};
+    const DWORD len = GetEnvironmentVariableA("CPVR_DIAG_EXEC_HOOKS", value, static_cast<DWORD>(sizeof(value)));
+    if (len == 0 || len >= sizeof(value)) {
+        if (GetAnyOpenXRSubmitEnabled() == 0) {
+            return 0;
+        }
+        uint32_t mask = kAll;
+        if (!CPVR_ShouldInstallSettingsResHook()) {
+            mask &= ~kSettings;
+        }
+        return mask;
+    }
+    if (_stricmp(value, "0") == 0 || _stricmp(value, "none") == 0 || _stricmp(value, "off") == 0) {
+        return 0;
+    }
+    if (_stricmp(value, "1") == 0 || _stricmp(value, "all") == 0 || _stricmp(value, "on") == 0) {
+        return kAll;
+    }
+
+    uint32_t mask = 0;
+    char* context = nullptr;
+    for (char* token = strtok_s(value, ",;+ ", &context); token; token = strtok_s(nullptr, ",;+ ", &context)) {
+        if (_stricmp(token, "camera") == 0) {
+            mask |= kCamera;
+        } else if (_stricmp(token, "projection") == 0 || _stricmp(token, "fov") == 0) {
+            mask |= kProjection;
+        } else if (_stricmp(token, "movement") == 0 || _stricmp(token, "input") == 0) {
+            mask |= kMovement;
+        } else if (_stricmp(token, "settings") == 0 || _stricmp(token, "resolution") == 0) {
+            mask |= kSettings;
+        }
+    }
+    return mask;
+}
+
 DWORD WINAPI WorkerThread(LPVOID) {
     if (g_verboseLog) Log("Worker thread started, waiting 8 seconds...\n");
     if (g_backendModulePath[0] != '\0') {
@@ -5759,6 +5806,22 @@ DWORD WINAPI WorkerThread(LPVOID) {
     PollLiveControls();
     InitGameModuleInfo();
 
+    const uint32_t execHookMask = GetDiagnosticExecHookMask();
+    constexpr uint32_t kCameraHooks = 1u << 0;
+    constexpr uint32_t kProjectionHooks = 1u << 1;
+    constexpr uint32_t kMovementHooks = 1u << 2;
+    constexpr uint32_t kSettingsHooks = 1u << 3;
+    if (execHookMask == 0) {
+        Log("Diagnostic: executable patch hooks disabled.\n");
+        return 0;
+    }
+    Log("Diagnostic: executable hook mask=0x%X (camera=%d projection=%d movement=%d settings=%d)\n",
+        execHookMask,
+        (execHookMask & kCameraHooks) != 0 ? 1 : 0,
+        (execHookMask & kProjectionHooks) != 0 ? 1 : 0,
+        (execHookMask & kMovementHooks) != 0 ? 1 : 0,
+        (execHookMask & kSettingsHooks) != 0 ? 1 : 0);
+
     // Allocate telemetry structure
     g_telemetry = static_cast<TelemetryData*>(VirtualAlloc(nullptr, sizeof(TelemetryData), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE));
     ZeroMemory(g_telemetry, sizeof(TelemetryData));
@@ -5766,77 +5829,85 @@ DWORD WINAPI WorkerThread(LPVOID) {
     g_setterTrace = static_cast<SetterTraceData*>(VirtualAlloc(nullptr, sizeof(SetterTraceData), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE));
     ZeroMemory(g_setterTrace, sizeof(SetterTraceData));
 
-    bool h1 = InstallLocateCameraHook();
-    if (g_verboseLog || !h1) Log("LocateCamera hook result: %s\n", h1 ? "SUCCESS" : "FAILED");
+    if ((execHookMask & kCameraHooks) != 0) {
+        bool h1 = InstallLocateCameraHook();
+        if (g_verboseLog || !h1) Log("LocateCamera hook result: %s\n", h1 ? "SUCCESS" : "FAILED");
 
-    bool h2 = InstallPatchCameraHook();
-    if (g_verboseLog || !h2) Log("PatchCamera hook result: %s\n", h2 ? "SUCCESS" : "FAILED");
+        bool h2 = InstallPatchCameraHook();
+        if (g_verboseLog || !h2) Log("PatchCamera hook result: %s\n", h2 ? "SUCCESS" : "FAILED");
 
-    bool h3 = InstallFinalCameraHook();
-    if (g_verboseLog || !h3) Log("FinalCamera hook result: %s\n", h3 ? "SUCCESS" : "FAILED");
+        bool h3 = InstallFinalCameraHook();
+        if (g_verboseLog || !h3) Log("FinalCamera hook result: %s\n", h3 ? "SUCCESS" : "FAILED");
 
-    bool h_pitch = InstallPitchHook();
-    g_pitchHookInstalled = h_pitch;
-    if (g_verboseLog || !h_pitch) Log("Pitch hook result: %s\n", h_pitch ? "SUCCESS" : "FAILED");
-
-    bool h_fov = InstallNormalFovHook();
-    g_normalFovHookInstalled = h_fov;
-    if (g_verboseLog || !h_fov) Log("NormalFOV hook result: %s\n", h_fov ? "SUCCESS" : "FAILED");
-
-    //bool copyH = InstallProjAspectCopyHook();
-    g_projAspectCopyHookInstalled = false;
-
-    //bool aspecCall = InstallProjAspectCallHooks();
-    g_projAspectCallHookInstalled = false;
-
-    bool h_proj_stage = InstallProjStageHook();
-    g_projStageHookInstalled = h_proj_stage;
-    Log("ProjStage hook result: %s\n", h_proj_stage ? "SUCCESS" : "FAILED");
-
-    bool h_unifix = InstallUnifixHook();
-    g_unifixHookInstalled = h_unifix;
-    if (g_verboseLog || !h_unifix) Log("Unifix hook result: %s\n", h_unifix ? "SUCCESS" : "FAILED");
-
-    bool h_lod = InstallFixLoDHook();
-    if (g_verboseLog || !h_lod) Log("FixLoD hook result: %s\n", h_lod ? "SUCCESS" : "FAILED");
-
-    bool h_menu = InstallMenuModeHook();
-    if (g_verboseLog || !h_menu) Log("MenuMode hook result: %s\n", h_menu ? "SUCCESS" : "FAILED");
-
-    bool h_heading_force = InstallForceHeadingUpdateHook();
-    g_forceHeadingUpdateHookInstalled = h_heading_force;
-    if (g_verboseLog || !h_heading_force) Log("ForceHeadingUpdate hook result: %s\n", h_heading_force ? "SUCCESS" : "FAILED");
-
-    bool h4 = InstallOnFootDeltaHeadHook();
-    if (g_verboseLog || !h4) Log("OnFootDeltaHead hook result: %s\n", h4 ? "SUCCESS" : "FAILED");
-
-    bool h5 = InstallOnFootMoveXYHook();
-    if (g_verboseLog || !h5) Log("OnFootMoveXY hook result: %s\n", h5 ? "SUCCESS" : "FAILED");
-
-    if (g_liveControls.xrXInputInstall != 0) {
-        bool h_xinput = InstallXInputHook();
-        if (g_verboseLog || !h_xinput) Log("XInput hook result: %s\n", h_xinput ? "SUCCESS" : "FAILED");
+        bool h_pitch = InstallPitchHook();
+        g_pitchHookInstalled = h_pitch;
+        if (g_verboseLog || !h_pitch) Log("Pitch hook result: %s\n", h_pitch ? "SUCCESS" : "FAILED");
     }
 
-    bool h6 = InstallFreeDeltaHeadHook();
-    if (g_verboseLog || !h6) Log("FreeDeltaHead hook result: %s\n", h6 ? "SUCCESS" : "FAILED");
+    if ((execHookMask & kProjectionHooks) != 0) {
+        bool h_fov = InstallNormalFovHook();
+        g_normalFovHookInstalled = h_fov;
+        if (g_verboseLog || !h_fov) Log("NormalFOV hook result: %s\n", h_fov ? "SUCCESS" : "FAILED");
+
+        //bool copyH = InstallProjAspectCopyHook();
+        g_projAspectCopyHookInstalled = false;
+
+        //bool aspecCall = InstallProjAspectCallHooks();
+        g_projAspectCallHookInstalled = false;
+
+        bool h_proj_stage = InstallProjStageHook();
+        g_projStageHookInstalled = h_proj_stage;
+        Log("ProjStage hook result: %s\n", h_proj_stage ? "SUCCESS" : "FAILED");
+
+        bool h_unifix = InstallUnifixHook();
+        g_unifixHookInstalled = h_unifix;
+        if (g_verboseLog || !h_unifix) Log("Unifix hook result: %s\n", h_unifix ? "SUCCESS" : "FAILED");
+
+        bool h_lod = InstallFixLoDHook();
+        if (g_verboseLog || !h_lod) Log("FixLoD hook result: %s\n", h_lod ? "SUCCESS" : "FAILED");
+    }
+
+    if ((execHookMask & kMovementHooks) != 0) {
+        bool h_menu = InstallMenuModeHook();
+        if (g_verboseLog || !h_menu) Log("MenuMode hook result: %s\n", h_menu ? "SUCCESS" : "FAILED");
+
+        bool h_heading_force = InstallForceHeadingUpdateHook();
+        g_forceHeadingUpdateHookInstalled = h_heading_force;
+        if (g_verboseLog || !h_heading_force) Log("ForceHeadingUpdate hook result: %s\n", h_heading_force ? "SUCCESS" : "FAILED");
+
+        bool h4 = InstallOnFootDeltaHeadHook();
+        if (g_verboseLog || !h4) Log("OnFootDeltaHead hook result: %s\n", h4 ? "SUCCESS" : "FAILED");
+
+        bool h5 = InstallOnFootMoveXYHook();
+        if (g_verboseLog || !h5) Log("OnFootMoveXY hook result: %s\n", h5 ? "SUCCESS" : "FAILED");
+
+        if (g_liveControls.xrXInputInstall != 0) {
+            bool h_xinput = InstallXInputHook();
+            if (g_verboseLog || !h_xinput) Log("XInput hook result: %s\n", h_xinput ? "SUCCESS" : "FAILED");
+        }
+
+        bool h6 = InstallFreeDeltaHeadHook();
+        if (g_verboseLog || !h6) Log("FreeDeltaHead hook result: %s\n", h6 ? "SUCCESS" : "FAILED");
+    }
 
     if (kEnablePatchBufferTracer != 0) {
         bool h_pb = InstallPatchBufferHook();
         if (g_verboseLog || !h_pb) Log("PatchBuffer hook result: %s\n", h_pb ? "SUCCESS" : "FAILED");
     }
 
-    bool h10 = InstallSettingsResHook();
-    if (g_verboseLog || !h10) Log("SettingsRes hook result: %s\n", h10 ? "SUCCESS" : "FAILED");
+    if ((execHookMask & kSettingsHooks) != 0) {
+        bool h10 = InstallSettingsResHook();
+        if (g_verboseLog || !h10) Log("SettingsRes hook result: %s\n", h10 ? "SUCCESS" : "FAILED");
 
-    if (CPVR_ShouldInstallDlssPatternHooks()) {
-        bool h11 = InstallDLSSResHook();
-        if (g_verboseLog || !h11) Log("DLSSRes hook result: %s\n", h11 ? "SUCCESS" : "FAILED");
+        if (CPVR_ShouldInstallDlssPatternHooks()) {
+            bool h11 = InstallDLSSResHook();
+            if (g_verboseLog || !h11) Log("DLSSRes hook result: %s\n", h11 ? "SUCCESS" : "FAILED");
 
-        bool h12 = InstallDLSSMatricesHook();
-        if (g_verboseLog || !h12) Log("DLSSMatrices hook result: %s\n", h12 ? "SUCCESS" : "FAILED");
-    } else {
-        Log("Proton compat: DLSS pattern hooks disabled. Set CPVR_ENABLE_DLSS_PATTERN_HOOKS=1 to force-enable.\n");
+            bool h12 = InstallDLSSMatricesHook();
+            if (g_verboseLog || !h12) Log("DLSSMatrices hook result: %s\n", h12 ? "SUCCESS" : "FAILED");
+        } else {
+            Log("Proton compat: DLSS pattern hooks disabled. Set CPVR_ENABLE_DLSS_PATTERN_HOOKS=1 to force-enable.\n");
+        }
     }
 
     if (kEnableNativeSetterTracers != 0) {
@@ -6138,9 +6209,13 @@ extern "C" void CyberpunkVRPort_EnableDredOnce();
 extern "C" __declspec(dllexport) HRESULT WINAPI CreateDXGIFactory(REFIID riid, void** ppFactory) {
     CyberpunkVRPort_EnableDredOnce();
     PrepareStartupLiveControls();
-    InitOpenXREarly();
     auto p = reinterpret_cast<PFN_CreateDXGIFactory_Proxy>(GetRealProc("CreateDXGIFactory"));
     if (!p) return E_FAIL;
+    if (GetAnyOpenXRSubmitEnabled() != 0) {
+        InitOpenXREarly();
+    } else {
+        Log("Diagnostic: OpenXR submit disabled; CreateDXGIFactory wrapper active without OpenXR init.\n");
+    }
     IDXGIFactory7* realFact = nullptr;
     HRESULT hr = p(__uuidof(IDXGIFactory7), reinterpret_cast<void**>(&realFact));
     if (FAILED(hr) || !realFact) return hr;
@@ -6154,9 +6229,13 @@ extern "C" __declspec(dllexport) HRESULT WINAPI CreateDXGIFactory(REFIID riid, v
 extern "C" __declspec(dllexport) HRESULT WINAPI CreateDXGIFactory1(REFIID riid, void** ppFactory) {
     CyberpunkVRPort_EnableDredOnce();
     PrepareStartupLiveControls();
-    InitOpenXREarly();
     auto p = reinterpret_cast<PFN_CreateDXGIFactory_Proxy>(GetRealProc("CreateDXGIFactory1"));
     if (!p) return E_FAIL;
+    if (GetAnyOpenXRSubmitEnabled() != 0) {
+        InitOpenXREarly();
+    } else {
+        Log("Diagnostic: OpenXR submit disabled; CreateDXGIFactory1 wrapper active without OpenXR init.\n");
+    }
     IDXGIFactory7* realFact = nullptr;
     HRESULT hr = p(__uuidof(IDXGIFactory7), reinterpret_cast<void**>(&realFact));
     if (FAILED(hr) || !realFact) return hr;
@@ -6170,9 +6249,13 @@ extern "C" __declspec(dllexport) HRESULT WINAPI CreateDXGIFactory1(REFIID riid, 
 extern "C" __declspec(dllexport) HRESULT WINAPI CreateDXGIFactory2(UINT Flags, REFIID riid, void** ppFactory) {
     CyberpunkVRPort_EnableDredOnce();
     PrepareStartupLiveControls();
-    InitOpenXREarly();
     auto p = reinterpret_cast<PFN_CreateDXGIFactory2_Proxy>(GetRealProc("CreateDXGIFactory2"));
     if (!p) return E_FAIL;
+    if (GetAnyOpenXRSubmitEnabled() != 0) {
+        InitOpenXREarly();
+    } else {
+        Log("Diagnostic: OpenXR submit disabled; CreateDXGIFactory2 wrapper active without OpenXR init.\n");
+    }
     IDXGIFactory7* realFact = nullptr;
     HRESULT hr = p(Flags, __uuidof(IDXGIFactory7), reinterpret_cast<void**>(&realFact));
     if (FAILED(hr) || !realFact) return hr;

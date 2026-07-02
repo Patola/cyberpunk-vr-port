@@ -13,8 +13,10 @@ WINEDLLOVERRIDES="dxgi=n,b" \
 CPVR_PROTON_COMPAT=1 \
 CPVR_ENABLE_DRED=0 \
 CPVR_FORCE_STEAMVR_RUNTIME=0 \
+CPVR_DEFAULT_AER_SUBMIT=0 \
 CPVR_DEFAULT_DEPTH_SUBMIT=0 \
 CPVR_ENABLE_NVIDIA_INTEROP=0 \
+CPVR_ENABLE_SETTINGS_RES_HOOK=0 \
 CPVR_ENABLE_DLSS_PATTERN_HOOKS=0 \
 PROTON_LOG=1 \
 %command%
@@ -27,6 +29,24 @@ prefix/system directory and logs the resolved path in `cyberpunkvrport.log`.
 For the tested dependency-mod install sequence and the extra DLL overrides used
 by CET/RED4ext, see [Proton mod install notes](proton-mod-install.md).
 
+## Current tested status
+
+On Proton with WiVRn/OpenXR and an AMD RX 7900 XTX, the current known-good path
+is mono OpenXR submit:
+
+- `xr_mono_submit=1`
+- `xr_aer_submit=0`
+- `xr_aer_v2=0`
+- `xr_mono_xqueue_wait=0`
+- `xr_aer_xqueue_wait=0`
+- `xr_mono_depth_capture=0`
+
+The SettingsRes executable hook is disabled by default under Proton because it
+reproduced a stale two-frame present loop while audio/input/game simulation kept
+running. Classic non-CUDA AER remains experimental: on the tested Proton/WiVRn
+setup it initialized but did not produce an initial valid left/right eye pair,
+then entered a black/stalled startup path.
+
 ## Compatibility environment variables
 
 - `CPVR_PROTON_COMPAT=auto|0|1`: defaults to `auto`, enabled when Wine is
@@ -36,6 +56,10 @@ by CET/RED4ext, see [Proton mod install notes](proton-mod-install.md).
 - `CPVR_ENABLE_DRED=0|1`: defaults off under Proton, on under Windows.
 - `CPVR_FORCE_STEAMVR_RUNTIME=0|1`: defaults off under Proton. Proton/wineopenxr
   should usually own OpenXR runtime selection.
+- `CPVR_DEFAULT_AER_SUBMIT=0|1`: default value written to a new `vrport.ini`
+  for `xr_aer_submit`; defaults off under Proton. Mono submit is the current
+  known-good Proton path. Classic AER is still experimental because it can enter
+  a black/stalled startup path before a valid alternating camera pair exists.
 - `CPVR_DEFAULT_DEPTH_SUBMIT=0|1`: defaults off under Proton, preserving the
   upstream default under Windows.
 - `CPVR_DEFAULT_DLSS_MATRIX_HOOK=0|1`: default value written to a new
@@ -44,9 +68,17 @@ by CET/RED4ext, see [Proton mod install notes](proton-mod-install.md).
   DLSS resolution/matrix pattern patches. Defaults off under Proton because FSR
   users do not need these hooks and pattern patches are the riskiest class of
   compatibility issue.
+- `CPVR_ENABLE_SETTINGS_RES_HOOK=0|1`: controls the executable hook that writes
+  Cyberpunk's internal settings-resolution structure. Defaults off under Proton;
+  on VKD3D-Proton it can leave the game presenting a stale two-frame loop while
+  audio and simulation continue. Swapchain/window overrides remain active.
 - `CPVR_ENABLE_NVIDIA_INTEROP=0|1`: controls NVIDIA-only AER V2/NvOF/CUDA style
   paths. Defaults off under Proton so an old `vrport.ini` with `xr_aer_v2=1`
   does not repeatedly try to initialize unavailable interop on AMD.
+- `CPVR_DIAG_EXEC_HOOKS=...`: diagnostic override for executable patch hooks.
+  If unset, normal policy is used. Set to `none`, `all`, or a separated list of
+  `camera`, `projection`, `movement`, and `settings`. This is useful after an
+  upstream rebase to isolate which hook family regressed Proton startup.
 
 ## AMD / non-CUDA behavior
 

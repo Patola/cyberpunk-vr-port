@@ -137,6 +137,10 @@ extern "C" bool CPVR_ShouldForceSteamVrRuntime() {
     return ReadEnvBool("CPVR_FORCE_STEAMVR_RUNTIME", !CPVR_ProtonCompatEnabled());
 }
 
+extern "C" bool CPVR_DefaultAERSubmit() {
+    return ReadEnvBool("CPVR_DEFAULT_AER_SUBMIT", !CPVR_ProtonCompatEnabled());
+}
+
 extern "C" bool CPVR_DefaultDepthSubmit() {
     return ReadEnvBool("CPVR_DEFAULT_DEPTH_SUBMIT", !CPVR_ProtonCompatEnabled());
 }
@@ -147,6 +151,10 @@ extern "C" bool CPVR_DefaultDlssMatrixHook() {
 
 extern "C" bool CPVR_ShouldInstallDlssPatternHooks() {
     return ReadEnvBool("CPVR_ENABLE_DLSS_PATTERN_HOOKS", !CPVR_ProtonCompatEnabled());
+}
+
+extern "C" bool CPVR_ShouldInstallSettingsResHook() {
+    return ReadEnvBool("CPVR_ENABLE_SETTINGS_RES_HOOK", !CPVR_ProtonCompatEnabled());
 }
 
 extern "C" bool CPVR_ShouldEnableNvidiaInterop() {

@@ -3578,26 +3578,71 @@ static const char* ClassifyQword(uint64_t v) {
 }
 
 static uint64_t SafeReadQword(uint8_t* base, size_t off) {
+    if (!base || off > UINTPTR_MAX - reinterpret_cast<uintptr_t>(base))
+        return 0;
+    auto* ptr = base + off;
+    if (!VRIK_IsReadable(ptr, sizeof(uint64_t)))
+        return 0;
     __try { return *reinterpret_cast<uint64_t*>(base + off); }
     __except(EXCEPTION_EXECUTE_HANDLER) { return 0; }
 }
 
 static float SafeReadFloat(uint8_t* base, size_t off) {
+    if (!base || off > UINTPTR_MAX - reinterpret_cast<uintptr_t>(base))
+        return 0.0f;
+    auto* ptr = base + off;
+    if (!VRIK_IsReadable(ptr, sizeof(float)))
+        return 0.0f;
     __try { return *reinterpret_cast<float*>(base + off); }
     __except(EXCEPTION_EXECUTE_HANDLER) { return 0.0f; }
 }
 
 static uint32_t SafeReadU32(uint8_t* base, size_t off) {
+    if (!base || off > UINTPTR_MAX - reinterpret_cast<uintptr_t>(base))
+        return 0;
+    auto* ptr = base + off;
+    if (!VRIK_IsReadable(ptr, sizeof(uint32_t)))
+        return 0;
     __try { return *reinterpret_cast<uint32_t*>(base + off); }
     __except(EXCEPTION_EXECUTE_HANDLER) { return 0; }
 }
 
+static bool IsExecutablePtr(const void* aPtr)
+{
+    if (!aPtr)
+        return false;
+
+    MEMORY_BASIC_INFORMATION mbi;
+    if (VirtualQuery(aPtr, &mbi, sizeof(mbi)) == 0)
+        return false;
+    if (mbi.State != MEM_COMMIT)
+        return false;
+    if (mbi.Protect & PAGE_GUARD)
+        return false;
+
+    const DWORD prot = mbi.Protect & 0xFF;
+    return prot == PAGE_EXECUTE || prot == PAGE_EXECUTE_READ ||
+           prot == PAGE_EXECUTE_READWRITE || prot == PAGE_EXECUTE_WRITECOPY;
+}
+
 static RED4ext::CClass* SafeGetObjectType(void* aPtr)
 {
+    if (!VRIK_IsReadable(aPtr, sizeof(void*)))
+        return nullptr;
+
+    auto* vtbl = reinterpret_cast<void*>(SafeReadQword(reinterpret_cast<uint8_t*>(aPtr), 0));
+    if (!VRIK_IsReadable(vtbl, 0x10))
+        return nullptr;
+
+    auto* getType = reinterpret_cast<void*>(SafeReadQword(reinterpret_cast<uint8_t*>(vtbl), 0x8));
+    if (!IsExecutablePtr(getType))
+        return nullptr;
+
     __try
     {
         auto* obj = reinterpret_cast<RED4ext::ISerializable*>(aPtr);
-        return obj ? obj->GetType() : nullptr;
+        auto* type = obj->GetType();
+        return VRIK_IsReadable(type, 0x40) ? type : nullptr;
     }
     __except (EXCEPTION_EXECUTE_HANDLER)
     {
@@ -4515,12 +4560,67 @@ void SetVRWeaponAim(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame
 
 void GetVRWeaponAim(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame, int32_t* aOut, int64_t a4) {
     RED4EXT_UNUSED_PARAMETER(aContext);
-    RED4EXT_UNUSED_PARAMETER(aFrame);
     RED4EXT_UNUSED_PARAMETER(a4);
+    if (aFrame) aFrame->code++;
     
     if (aOut) {
         *aOut = g_waEnable;
     }
+}
+
+template<typename T>
+static bool VRIK_SnapshotDynArray(const RED4ext::DynArray<T>& aArray, T*& aEntries, uint32_t& aSize, uint32_t aMaxSize)
+{
+    const auto* raw = reinterpret_cast<const uint8_t*>(&aArray);
+    aEntries = reinterpret_cast<T*>(SafeReadQword(const_cast<uint8_t*>(raw), 0x0));
+    aSize = SafeReadU32(const_cast<uint8_t*>(raw), 0x0C);
+    if (aSize == 0)
+        return true;
+    if (!aEntries || aSize > aMaxSize)
+        return false;
+    return VRIK_IsReadable(aEntries, sizeof(T) * static_cast<size_t>(aSize));
+}
+
+static bool VRIK_CopyCString(const char* aSource, char* aDest, size_t aDestSize)
+{
+    if (!aSource || !aDest || aDestSize == 0)
+        return false;
+
+    __try
+    {
+        size_t i = 0;
+        for (; i + 1 < aDestSize; ++i)
+        {
+            const char ch = aSource[i];
+            aDest[i] = ch;
+            if (ch == '\0')
+                return i > 0;
+        }
+        aDest[i] = '\0';
+        return i > 0;
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER)
+    {
+        aDest[0] = '\0';
+        return false;
+    }
+}
+
+static bool VRIK_CopyCNameString(const RED4ext::CName* aName, char* aDest, size_t aDestSize)
+{
+    if (!VRIK_IsReadable(aName, sizeof(RED4ext::CName)))
+        return false;
+
+    const char* rawName = nullptr;
+    __try
+    {
+        rawName = aName->ToString();
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER)
+    {
+        return false;
+    }
+    return VRIK_CopyCString(rawName, aDest, aDestSize);
 }
 
 
@@ -4528,32 +4628,35 @@ void GetVRWeaponAim(RED4ext::IScriptable* aContext, RED4ext::CStackFrame* aFrame
 // identify the player call. Returns bitmask: 1=bufA set, 2=bufB set.
 static int VRIK_DoArmPlayer() {
     auto* animObj = FindPlayerAnimatedObjectByComponentName("root");
-    if (!animObj || !VRIK_IsReadable(animObj, 0x40)) return -1;
+    if (!animObj || !VRIK_IsReadable(animObj, sizeof(RED4ext::anim::AnimatedObject))) return -1;
     uint8_t* base = reinterpret_cast<uint8_t*>(animObj);
 
     g_PlayerTrackBufA = 0;
     g_PlayerTrackBufB = 0;
 
     // A: *(*(animObj+0x8) + 0x40)
-    void* ownerA = *reinterpret_cast<void**>(base + 0x8);
+    void* ownerA = reinterpret_cast<void*>(SafeReadQword(base, 0x8));
     if (VRIK_IsReadable(ownerA, 0x48))
-        g_PlayerTrackBufA = *reinterpret_cast<uintptr_t*>(reinterpret_cast<uint8_t*>(ownerA) + 0x40);
+        g_PlayerTrackBufA = SafeReadQword(reinterpret_cast<uint8_t*>(ownerA), 0x40);
 
     // B: *(*(animObj+0x18) + 0x18)
-    void* ownerB = *reinterpret_cast<void**>(base + 0x18);
+    void* ownerB = reinterpret_cast<void*>(SafeReadQword(base, 0x18));
     if (VRIK_IsReadable(ownerB, 0x20))
-        g_PlayerTrackBufB = *reinterpret_cast<uintptr_t*>(reinterpret_cast<uint8_t*>(ownerB) + 0x18);
+        g_PlayerTrackBufB = SafeReadQword(reinterpret_cast<uint8_t*>(ownerB), 0x18);
 
     // Resolve the head + hand bone indices from the metaRig bone names so the
     // pose hook does not rely on hard-coded guesses. The buffer the hook writes
     // (a2[7][0]) is indexed the same as metaRig->boneNames. Prefer an exact name
     // match, fall back to the shortest name containing the needles (so we get the
     // hand root, not a finger like "RightHandThumb1").
-    auto* metaRig = animObj->metaRig;
-    if (metaRig && std::strcmp(ClassifyQword(reinterpret_cast<uint64_t>(metaRig)), "HEAP") == 0)
+    auto* metaRig = reinterpret_cast<RED4ext::anim::MetaRig*>(SafeReadQword(base, 0x8));
+    if (metaRig && VRIK_IsReadable(metaRig, sizeof(RED4ext::anim::MetaRig)) &&
+        std::strcmp(ClassifyQword(reinterpret_cast<uint64_t>(metaRig)), "HEAP") == 0)
     {
-        const uint32_t boneCount = metaRig->boneNames.Size();
-        if (boneCount > 0 && boneCount < 8192)
+        RED4ext::CName* boneNames = nullptr;
+        uint32_t boneCount = 0;
+        if (VRIK_SnapshotDynArray(metaRig->boneNames, boneNames, boneCount, 8192) &&
+            boneCount > 0 && boneCount < 8192)
         {
             int head = -1, rightHand = -1, leftHand = -1;
             int rightArm = -1, rightFore = -1, leftArm = -1, leftFore = -1;
@@ -4563,9 +4666,10 @@ static int VRIK_DoArmPlayer() {
             size_t headLen = kNoMatch, rightLen = kNoMatch, leftLen = kNoMatch;
             for (uint32_t i = 0; i < boneCount; ++i)
             {
-                const char* nm = metaRig->boneNames[i].ToString();
-                if (!nm || !nm[0])
+                char nmBuf[128];
+                if (!VRIK_CopyCNameString(&boneNames[i], nmBuf, sizeof(nmBuf)))
                     continue;
+                const char* nm = nmBuf;
                 const size_t len = std::strlen(nm);
 
                 if (EqualsInsensitive(nm, "Head")) { head = static_cast<int>(i); headLen = 0; }
@@ -4618,10 +4722,13 @@ static int VRIK_DoArmPlayer() {
             for (int s = 0; s < 8; ++s) g_VRSpineIdx[s] = (s < spineTmpCount) ? spineTmp[s] : -1;
 
             // Copy the parent-index table so the pose hook can run FK each frame.
-            const uint32_t pc = metaRig->parentIndeces.Size();
+            int16_t* parents = nullptr;
+            uint32_t pc = 0;
+            if (!VRIK_SnapshotDynArray(metaRig->parentIndeces, parents, pc, 8192))
+                pc = 0;
             const uint32_t copyN = (pc < boneCount ? pc : boneCount);
             int written = 0;
-            for (uint32_t i = 0; i < copyN && i < 256; ++i) { g_VRBoneParent[i] = metaRig->parentIndeces[i]; ++written; }
+            for (uint32_t i = 0; parents && i < copyN && i < 256; ++i) { g_VRBoneParent[i] = parents[i]; ++written; }
             g_VRBoneCount = written;
 
             std::ofstream out(VRDiagPath("vrik_bone_resolve.txt"), std::ios::trunc);

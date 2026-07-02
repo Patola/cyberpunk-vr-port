@@ -39,6 +39,8 @@ static inline bool VRIK_IsReadable(const void* p, size_t n) {
     uintptr_t start = reinterpret_cast<uintptr_t>(mbi.BaseAddress);
     uintptr_t end   = start + mbi.RegionSize;
     uintptr_t a     = reinterpret_cast<uintptr_t>(p);
+    if (a < start || a > end) return false;
+    if (n > end - a) return false;
     return (a + n) <= end;
 }
 
@@ -1710,4 +1712,3 @@ inline bool InstallAnimPoseHook() {
         return false;
     return true;
 }
-

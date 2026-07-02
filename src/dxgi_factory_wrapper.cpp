@@ -21,6 +21,7 @@ extern "C" UINT GetForcedWindowWidth();
 extern "C" UINT GetForcedWindowHeight();
 extern "C" int GetMenuMode();
 extern "C" UINT GetForcedRenderHeightForAspect();
+extern "C" int GetAnyOpenXRSubmitEnabled();
 
 namespace {
 using PresentFn = HRESULT(STDMETHODCALLTYPE*)(IDXGISwapChain*, UINT, UINT);
@@ -37,6 +38,15 @@ std::mutex g_dredMutex;
 Microsoft::WRL::ComPtr<ID3D12Device> g_dredDevice;
 bool g_dredDumped = false;
 bool g_cursorClipped = false;
+
+UINT GetResizeBufferHeight()
+{
+    const UINT swapchainHeight = GetForcedSwapchainHeight();
+    if (CPVR_ProtonCompatEnabled() && swapchainHeight != 0) {
+        return swapchainHeight;
+    }
+    return GetForcedRenderHeightForAspect();
+}
 
 // [ECL-DIAG] Temporary tearing diagnostic. Hypothesis: the swapchain backbuffer
 // is rendered on a command queue different from the present queue (m_d3dQueue),
@@ -1225,19 +1235,23 @@ HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT syncInte
         UpdateCursorCapture(desc.OutputWindow);
     }
 
-    // DLSS is loaded lazily after the renderer first evaluates a frame, so
-    // nvngx_dlss.dll may not yet be in the process at startup. Try to install
-    // the NGX EvaluateFeature hook on every Present until it succeeds; once
-    // installed the function returns true cheaply.
-    static std::atomic<bool> s_ngxHookTried{false};
-    if (!s_ngxHookTried.load(std::memory_order_acquire)) {
-        if (NgxInstallEvaluateFeatureHook()) {
-            s_ngxHookTried.store(true, std::memory_order_release);
+    const bool presentWorkEnabled = GetAnyOpenXRSubmitEnabled() != 0;
+    if (presentWorkEnabled) {
+        // DLSS is loaded lazily after the renderer first evaluates a frame, so
+        // nvngx_dlss.dll may not yet be in the process at startup. Try to install
+        // the NGX EvaluateFeature hook on every Present until it succeeds; once
+        // installed the function returns true cheaply.
+        static std::atomic<bool> s_ngxHookTried{false};
+        if (!s_ngxHookTried.load(std::memory_order_acquire)) {
+            if (NgxInstallEvaluateFeatureHook()) {
+                s_ngxHookTried.store(true, std::memory_order_release);
+            }
         }
+
+        OverlayRender(swapChain);
+        OpenXRManager::Get().OnPresent(swapChain);
     }
 
-    OverlayRender(swapChain);
-    OpenXRManager::Get().OnPresent(swapChain);
     void** vtable = *reinterpret_cast<void***>(swapChain);
     PresentFn originalFn = GetOriginalMethod<PresentFn>(vtable, 8);
     const HRESULT hr = originalFn ? originalFn(swapChain, syncInterval, flags) : DXGI_ERROR_INVALID_CALL;
@@ -1305,8 +1319,7 @@ HRESULT STDMETHODCALLTYPE HookedSetFullscreenState(IDXGISwapChain* swapChain, BO
 
 HRESULT STDMETHODCALLTYPE HookedResizeBuffers(IDXGISwapChain* swapChain, UINT bufferCount, UINT width, UINT height, DXGI_FORMAT newFormat, UINT flags) {
     const UINT forcedWidth = GetForcedSwapchainWidth();
-    //const UINT forcedHeight = GetForcedSwapchainHeight();
-    const UINT forcedHeight = GetForcedRenderHeightForAspect();
+    const UINT forcedHeight = GetResizeBufferHeight();
 
     const UINT outWidth = forcedWidth != 0 ? forcedWidth : width;
     const UINT outHeight = forcedHeight != 0 ? forcedHeight : height;
@@ -1322,8 +1335,7 @@ HRESULT STDMETHODCALLTYPE HookedResizeBuffers(IDXGISwapChain* swapChain, UINT bu
 
 HRESULT STDMETHODCALLTYPE HookedResizeBuffers1(IDXGISwapChain3* swapChain, UINT bufferCount, UINT width, UINT height, DXGI_FORMAT format, UINT flags, const UINT* creationNodeMask, IUnknown* const* presentQueue) {
     const UINT forcedWidth = GetForcedSwapchainWidth();
-    //const UINT forcedHeight = GetForcedSwapchainHeight();
-    const UINT forcedHeight = GetForcedRenderHeightForAspect();
+    const UINT forcedHeight = GetResizeBufferHeight();
     
     const UINT outWidth = forcedWidth != 0 ? forcedWidth : width;
     const UINT outHeight = forcedHeight != 0 ? forcedHeight : height;

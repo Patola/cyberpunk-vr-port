@@ -2090,7 +2090,7 @@ bool OpenXRManager::CapturePresentedFrame(ID3D12Resource* backBuffer, const D3D1
     m_captureCmdList->Close();
     // Cross-queue safety for depth read (AER capture path). Mirrors the mono
     // path's guard in CaptureMonoPresentedFrame so VDXR depth submit no longer
-    // races the game's render queue → no more DEVICE_HUNG on save/load when
+    // races the game's render queue -> no more DEVICE_HUNG on save/load when
     // the depth resource is being recycled.
     if (depthCaptured) {
         CyberpunkVRPort_WaitOnAllGameSignals(m_d3dQueue);
