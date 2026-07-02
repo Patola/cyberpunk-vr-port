@@ -24,6 +24,9 @@ PROTON_LOG=1 \
 builtin/backend DXGI. The proxy then loads the real backend DXGI from the Proton
 prefix/system directory and logs the resolved path in `cyberpunkvrport.log`.
 
+For the tested dependency-mod install sequence and the extra DLL overrides used
+by CET/RED4ext, see [Proton mod install notes](proton-mod-install.md).
+
 ## Compatibility environment variables
 
 - `CPVR_PROTON_COMPAT=auto|0|1`: defaults to `auto`, enabled when Wine is
