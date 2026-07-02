@@ -156,15 +156,87 @@ Observed working versions:
 - Cyberpunk 2077 file version `3.0.80.51928`;
 - log reported: `RED4ext has been successfully initialized`.
 
+## 3. ArchiveXL
+
+Install method:
+
+- download the release zip;
+- extract the archive into the Cyberpunk 2077 game directory.
+
+Loader:
+
+- RED4ext plugin;
+- no additional `WINEDLLOVERRIDES` entry was needed beyond RED4ext's
+  `winmm=n,b`.
+
+Verification:
+
+```text
+red4ext/plugins/ArchiveXL/ArchiveXL-*.log
+```
+
+Observed working version:
+
+- ArchiveXL `1.26.8`;
+- log reported: `All archive extensions loaded.`;
+- log showed resource patch processing during startup.
+
+## 4. TweakXL
+
+Install method:
+
+- download the release zip;
+- extract the archive into the Cyberpunk 2077 game directory.
+
+Loader:
+
+- RED4ext plugin;
+- no additional `WINEDLLOVERRIDES` entry was needed beyond RED4ext's
+  `winmm=n,b`.
+
+Verification:
+
+```text
+red4ext/plugins/TweakXL/TweakXL-*.log
+```
+
+Observed working version:
+
+- TweakXL `1.11.3`;
+- log reported inheritance metadata and extra flats metadata loading;
+- log reported tweak scanning completed.
+
+## 5. redscript
+
+Install method:
+
+- download the release zip;
+- extract the archive into the Cyberpunk 2077 game directory.
+
+Loader:
+
+- game script compiler integration;
+- no additional `WINEDLLOVERRIDES` entry was needed.
+
+Verification:
+
+```text
+r6/logs/redscript_rCURRENT.log
+r6/cache/final.redscripts.modded
+```
+
+Observed working result:
+
+- log reported compilation of ArchiveXL and TweakXL `.reds` scripts;
+- log reported: `Compilation complete`;
+- log reported output saved to `r6/cache/final.redscripts.modded`.
+
 ## Next
 
 Continue installing and verifying the dependency chain in order:
 
-1. ArchiveXL
-2. TweakXL
-3. redscript
-4. Codeware
-5. Visual Holsters (Automatic Clothes Swap)
-6. Visible Bullets (Projectile Restoration)
-7. Equipment-EX
-8. This fork's `dxgi.dll` and `CyberpunkVR_Hands.dll`
+1. Codeware
+2. Visual Holsters (Automatic Clothes Swap)
+3. Visible Bullets (Projectile Restoration)
+4. Equipment-EX
+5. This fork's `dxgi.dll` and `CyberpunkVR_Hands.dll`
