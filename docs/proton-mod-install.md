@@ -36,17 +36,17 @@ For CET and RED4ext together:
 WINEDLLOVERRIDES="version,winmm=n,b" PROTON_LOG=1 %command% --launcher-skip
 ```
 
-Known DLL override users:
-
-- `version=n,b`: Cyber Engine Tweaks loader.
-- `winmm=n,b`: RED4ext loader.
-
-When this fork's `dxgi.dll` is added later, the launch option is expected to
-become:
+For the current full dependency stack plus this fork's `dxgi.dll`:
 
 ```sh
 WINEDLLOVERRIDES="version,winmm,dxgi=n,b" PROTON_LOG=1 %command% --launcher-skip
 ```
+
+Known DLL override users:
+
+- `version=n,b`: Cyber Engine Tweaks loader.
+- `winmm=n,b`: RED4ext loader.
+- `dxgi=n,b`: this fork's OpenXR/DXGI proxy.
 
 Prefer this environment-variable form over editing Wine registry DLL overrides.
 It is visible in Steam launch options, easy to copy into public instructions,
@@ -231,12 +231,157 @@ Observed working result:
 - log reported: `Compilation complete`;
 - log reported output saved to `r6/cache/final.redscripts.modded`.
 
+## 6. Codeware
+
+Install method:
+
+- download the release zip;
+- extract the archive into the Cyberpunk 2077 game directory.
+
+Loader:
+
+- RED4ext plugin;
+- no additional `WINEDLLOVERRIDES` entry was needed beyond RED4ext's
+  `winmm=n,b`.
+
+Verification:
+
+```text
+red4ext/plugins/Codeware/Codeware-*.log
+```
+
+Observed working version:
+
+- Codeware `1.20.3`;
+- log reported: `Codeware is initialized.`;
+- log reported `127623` predefined resource path hashes loaded.
+
+## 7. Visual Holsters (Automatic Clothes Swap)
+
+Install method:
+
+- download the release zip;
+- extract the archive into the Cyberpunk 2077 game directory.
+
+Loader:
+
+- CET mod;
+- no additional `WINEDLLOVERRIDES` entry was needed.
+
+Verification:
+
+```text
+bin/x64/plugins/cyber_engine_tweaks/mods/VisualHolster/VisualHolster.log
+```
+
+Observed working version:
+
+- Visual Holster `1.2 REL`;
+- before Equipment-EX was installed, the log warned that Equipment-EX was
+  required;
+- after Equipment-EX was installed, the log reported initialization with
+  `Slots: 31`, `Tags: 91`, `Custom Items: 0`, `EquipmentEx Version: 1.2.9`.
+
+## 8. Visible Bullets (Projectile Restoration)
+
+Install method:
+
+- download the release zip;
+- extract the archive into the Cyberpunk 2077 game directory.
+
+Loader:
+
+- TweakXL tweaks;
+- no additional `WINEDLLOVERRIDES` entry was needed.
+
+Observed install footprint:
+
+```text
+r6/tweaks/BulletProjectileOverhaul/
+```
+
+## 9. Equipment-EX
+
+Install method:
+
+- download the release zip;
+- extract the archive into the Cyberpunk 2077 game directory.
+
+Loader:
+
+- ArchiveXL archive;
+- redscript scripts;
+- no additional `WINEDLLOVERRIDES` entry was needed.
+
+Observed install footprint:
+
+```text
+archive/pc/mod/EquipmentEx.archive
+archive/pc/mod/EquipmentEx.archive.xl
+r6/config/redsUserHints/EquipmentEx.toml
+r6/scripts/EquipmentEx/
+```
+
+Observed working version:
+
+- Equipment-EX `1.2.9`, as reported by Visual Holster after initialization.
+
+## Optional holster content packs
+
+The local test also installed extra holster content used by Visual Holster:
+
+```text
+archive/pc/mod/s10_eqkatana.archive
+archive/pc/mod/s10_katanaeqh.archive.xl
+archive/pc/mod/scorpion_military_dual_pistol_holsters.archive
+archive/pc/mod/scorpion_military_dual_pistol_holsters.xl
+```
+
+These were extracted into the Cyberpunk 2077 game directory and did not require
+additional `WINEDLLOVERRIDES` entries.
+
+## 10. Cyberpunk VR Port fork
+
+Build both DLLs with:
+
+```sh
+./scripts/build-msvc-clang.sh
+```
+
+Install files:
+
+```text
+build-msvc-clang-dxgi/bin/dxgi.dll
+  -> Cyberpunk 2077/bin/x64/dxgi.dll
+
+build-msvc-clang-hands/CyberpunkVR_Hands.dll
+  -> Cyberpunk 2077/red4ext/plugins/CyberpunkVR_Hands/CyberpunkVR_Hands.dll
+
+mods/cet/CyberpunkVRPort_*
+  -> Cyberpunk 2077/bin/x64/plugins/cyber_engine_tweaks/mods/
+
+mods/redscript/CyberpunkVRPort_*
+  -> Cyberpunk 2077/r6/scripts/
+```
+
+Required launch option with CET and RED4ext:
+
+```sh
+WINEDLLOVERRIDES="version,winmm,dxgi=n,b" PROTON_LOG=1 %command% --launcher-skip
+```
+
+Expected first-run logs:
+
+```text
+bin/x64/cyberpunkvrport.log
+red4ext/plugins/CyberpunkVR_Hands/
+```
+
 ## Next
 
 Continue installing and verifying the dependency chain in order:
 
-1. Codeware
-2. Visual Holsters (Automatic Clothes Swap)
-3. Visible Bullets (Projectile Restoration)
-4. Equipment-EX
-5. This fork's `dxgi.dll` and `CyberpunkVR_Hands.dll`
+1. Launch with `WINEDLLOVERRIDES="version,winmm,dxgi=n,b"`.
+2. Check `bin/x64/cyberpunkvrport.log`.
+3. Check RED4ext logs for `CyberpunkVR_Hands.dll`.
+4. Start in conservative graphics settings before enabling optional VR features.
