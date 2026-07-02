@@ -8,6 +8,9 @@ FetchContent_Declare(
   GIT_REPOSITORY https://github.com/KhronosGroup/OpenXR-SDK.git
   GIT_TAG release-1.0.34
 )
+# Avoid exporting a host-provided jsoncpp_interface target from the embedded
+# OpenXR loader when cross-building the Windows DLL from Linux.
+set(BUILD_WITH_SYSTEM_JSONCPP OFF CACHE BOOL "Use OpenXR vendored JsonCpp" FORCE)
 FetchContent_MakeAvailable(openxr)
 
 FetchContent_Declare(
@@ -28,6 +31,21 @@ set(MINHOOK_SOURCES
     externals/minhook/src/hde/hde64.c
 )
 
+if(MINGW)
+    set(RED4EXT_HEADER_ONLY ON CACHE BOOL "Use RED4ext header-only mode for MinGW cross-builds" FORCE)
+endif()
+
+option(CPVR_ENABLE_NVOF_D3D12 "Build the NVIDIA Optical Flow D3D12 backend" ON)
+if(MINGW)
+    set(CPVR_ENABLE_NVOF_D3D12 OFF CACHE BOOL "Build the NVIDIA Optical Flow D3D12 backend" FORCE)
+endif()
+option(CPVR_ENABLE_RED4EXT_PROXY_RTTI "Enable RED4ext RTTI queries from the DXGI proxy" ON)
+if(MINGW)
+    set(CPVR_ENABLE_RED4EXT_PROXY_RTTI OFF CACHE BOOL "Enable RED4ext RTTI queries from the DXGI proxy" FORCE)
+    if(NOT DEFINED AER_V2_NVOF)
+        set(AER_V2_NVOF OFF CACHE BOOL "Enable NvOF CUDA backend for AER V2")
+    endif()
+endif()
 
 add_library(imgui STATIC
     ${imgui_SOURCE_DIR}/imgui.cpp
@@ -63,21 +81,42 @@ add_library(dxgi SHARED
     src/aer_v2/aer_v2_pipeline.cpp
     src/aer_v2/pose_predictor.cpp
     externals/im3d/im3d.cpp
-    externals/Optical_Flow_SDK_5.0.7/Common/NvOFBase/NvOF.cpp
-    externals/Optical_Flow_SDK_5.0.7/Common/NvOFBase/NvOFD3D12.cpp
-    externals/Optical_Flow_SDK_5.0.7/Common/NvOFBase/NvOFD3DCommon.cpp
 )
+
+if(CPVR_ENABLE_NVOF_D3D12)
+    target_sources(dxgi PRIVATE
+        externals/Optical_Flow_SDK_5.0.7/Common/NvOFBase/NvOF.cpp
+        externals/Optical_Flow_SDK_5.0.7/Common/NvOFBase/NvOFD3D12.cpp
+        externals/Optical_Flow_SDK_5.0.7/Common/NvOFBase/NvOFD3DCommon.cpp
+    )
+endif()
 
 add_subdirectory(externals/RED4ext.SDK)
 
 
 target_compile_features(dxgi PRIVATE cxx_std_20)
-target_compile_definitions(dxgi PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX XR_USE_PLATFORM_WIN32 XR_USE_GRAPHICS_API_D3D12)
+target_compile_definitions(dxgi PRIVATE
+    WIN32_LEAN_AND_MEAN
+    NOMINMAX
+    XR_USE_PLATFORM_WIN32
+    XR_USE_GRAPHICS_API_D3D12
+    CPVR_ENABLE_NVOF_D3D12=$<BOOL:${CPVR_ENABLE_NVOF_D3D12}>
+    CPVR_ENABLE_RED4EXT_PROXY_RTTI=$<BOOL:${CPVR_ENABLE_RED4EXT_PROXY_RTTI}>
+)
+if(MINGW)
+    target_compile_features(dxgi PRIVATE cxx_std_23)
+    target_compile_options(dxgi PRIVATE
+        $<$<COMPILE_LANGUAGE:CXX>:-include>
+        $<$<COMPILE_LANGUAGE:CXX>:${CMAKE_CURRENT_SOURCE_DIR}/cmake/mingw-include/cpvr_mingw_prelude.hpp>
+    )
+    target_link_options(dxgi PRIVATE -static -static-libgcc -static-libstdc++)
+endif()
 target_link_libraries(dxgi PRIVATE
     openxr_loader
     imgui
     d3d12.lib       # system D3D12 import lib (real d3d12.dll the game already loads)
     d3dcompiler
+    dwmapi
     RED4ext::SDK
 )
 target_include_directories(dxgi PRIVATE
@@ -90,6 +129,14 @@ target_include_directories(dxgi PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/externals/minhook/src
     ${CMAKE_CURRENT_SOURCE_DIR}/externals/minhook/src/hde
 )
+if(MINGW)
+    target_include_directories(dxgi PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/cmake/mingw-include
+    )
+    target_include_directories(RED4ext.SDK INTERFACE
+        ${CMAKE_CURRENT_SOURCE_DIR}/cmake/mingw-include
+    )
+endif()
 
 # ---- Optional CUDA / NvOF CUDA backend (AER V2 "эталон" path) ----
 # When the CUDA Toolkit is present we add the NvOFCuda backend + compile the
@@ -145,5 +192,6 @@ endif()
 
 set_target_properties(dxgi PROPERTIES
     OUTPUT_NAME dxgi
+    PREFIX ""
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )

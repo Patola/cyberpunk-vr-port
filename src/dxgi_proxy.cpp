@@ -14,8 +14,10 @@
 #include "openxr_manager.h"
 #include "proton_compat.h"
 #include "runtime_fov_correction.h"
+#if CPVR_ENABLE_RED4EXT_PROXY_RTTI
 #include <RED4ext/RED4ext.hpp>
 #include <RED4ext/Scripting/Natives/ScriptGameInstance.hpp>
+#endif
 #include <iostream>
 #include <MinHook.h>
 
@@ -2288,16 +2290,19 @@ static float* GetShotShared() {
 // ============================================
 // VARIABILI GLOBALI PER LA CACHE
 // ============================================
+#if CPVR_ENABLE_RED4EXT_PROXY_RTTI
 static RED4ext::CProperty* g_mountedVehicleProp = nullptr;
 static RED4ext::CProperty* g_isAimingProp = nullptr;
 static RED4ext::CProperty* g_equippedWeaponProp = nullptr;
 static bool g_isRTTIInitialized = false;
+#endif
 
 
 
 // ============================================
 // INIZIALIZZAZIONE RTTI
 // ============================================
+#if CPVR_ENABLE_RED4EXT_PROXY_RTTI
 void InitializeMountedVehicleCache() {
     if (g_isRTTIInitialized) return;
 
@@ -2326,6 +2331,7 @@ void InitializeMountedVehicleCache() {
 
     g_isRTTIInitialized = true;
 }
+#endif
 
 
 static uint64_t g_locateCameraHits = 0;
@@ -2348,6 +2354,7 @@ extern "C" void __fastcall OnLocateCameraCallback(float* rbxPtr, float xmm0_val)
     float dummy;
     if (!ReadFloatSafe(reinterpret_cast<uintptr_t>(quat), &dummy)) return;
 
+#if CPVR_ENABLE_RED4EXT_PROXY_RTTI
     // 1. Inizializza la cache RTTI solo al primissimo frame
     if (!g_isRTTIInitialized) {
         InitializeMountedVehicleCache();
@@ -2379,6 +2386,9 @@ extern "C" void __fastcall OnLocateCameraCallback(float* rbxPtr, float xmm0_val)
     }else{
         OpenXRManager::Get().SetSharedSlot(126, 0.0f);
     }
+#else
+    OpenXRManager::Get().SetSharedSlot(126, 0.0f);
+#endif
     
 
     float camera_qx = quat[0];

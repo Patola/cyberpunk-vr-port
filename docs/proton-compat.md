@@ -63,6 +63,33 @@ An AMD-native quality path should be a later backend project. The clean shape is
 an upscaler-neutral motion-vector/depth telemetry layer first, then an AMD or
 shader-compute optical-flow/warp backend if needed.
 
+## Linux cross-build
+
+The AMD/Proton-oriented MinGW build disables MSVC/NVIDIA-specific pieces that
+are not expected to work on this path:
+
+- RED4ext RTTI queries from the `dxgi.dll` proxy;
+- NVIDIA Optical Flow D3D12 backend;
+- CUDA/NvOF AER V2 backend, unless explicitly re-enabled.
+
+Build command:
+
+```sh
+cmake -S . -B build-proton-compat -G Ninja \
+  -DCMAKE_SYSTEM_NAME=Windows \
+  -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
+  -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++ \
+  -DAER_V2_NVOF=OFF
+
+cmake --build build-proton-compat --target dxgi
+```
+
+The output DLL is:
+
+```text
+build-proton-compat/bin/dxgi.dll
+```
+
 ## Rebase audit
 
 After rebasing from upstream, run:

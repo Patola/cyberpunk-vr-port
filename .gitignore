@@ -1,4 +1,5 @@
 /build/
+/build-proton-compat/
 /build-vs/
 /build-vs-aerv2/
 /build-cuda/

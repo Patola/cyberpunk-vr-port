@@ -1,5 +1,7 @@
 #include "optical_flow_d3d12.h"
 
+#if CPVR_ENABLE_NVOF_D3D12
+
 #include <cstdarg>
 #include <cstring>
 #include <cwchar>
@@ -1362,3 +1364,72 @@ ID3D12Resource* OpticalFlowD3D12::GetInterpolatedResource(int eyeIndex) const {
     }
     return m_impl->interpolatedTextures[eyeIndex].Get();
 }
+
+#else
+
+struct OpticalFlowD3D12::Impl {};
+
+OpticalFlowD3D12::OpticalFlowD3D12() = default;
+OpticalFlowD3D12::~OpticalFlowD3D12() = default;
+
+bool OpticalFlowD3D12::MatchesFailedAttemptLocked(ID3D12Device*, uint32_t, uint32_t, DXGI_FORMAT) const {
+    return true;
+}
+
+bool OpticalFlowD3D12::EnsureInitialized(ID3D12Device* device, uint32_t width, uint32_t height, DXGI_FORMAT format) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_lastAttemptDevice = device;
+    m_lastAttemptWidth = width;
+    m_lastAttemptHeight = height;
+    m_lastAttemptFormat = format;
+    m_lastAttemptFailed = true;
+    return false;
+}
+
+bool OpticalFlowD3D12::ConvertToInputTexture(ID3D12Resource*, ID3D12Resource*, ID3D12Fence*, uint64_t, uint64_t*) {
+    return false;
+}
+
+ID3D12Fence* OpticalFlowD3D12::GetConvertFence() const {
+    return nullptr;
+}
+
+bool OpticalFlowD3D12::ExecuteFlow(ID3D12Resource*, ID3D12Resource*, int) {
+    return false;
+}
+
+bool OpticalFlowD3D12::SynthesizeMidpoint(ID3D12Resource*, ID3D12Resource*, int) {
+    return false;
+}
+
+bool OpticalFlowD3D12::ApplySharpen(ID3D12Resource*, ID3D12Resource*, float, float) {
+    return false;
+}
+
+void OpticalFlowD3D12::Shutdown() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_impl.reset();
+    m_lastAttemptDevice = nullptr;
+    m_lastAttemptWidth = 0;
+    m_lastAttemptHeight = 0;
+    m_lastAttemptFormat = DXGI_FORMAT_UNKNOWN;
+    m_lastAttemptFailed = false;
+}
+
+bool OpticalFlowD3D12::IsReady() const {
+    return false;
+}
+
+DXGI_FORMAT OpticalFlowD3D12::GetInputTextureFormat() const {
+    return DXGI_FORMAT_UNKNOWN;
+}
+
+ID3D12Resource* OpticalFlowD3D12::GetFlowResource(int) const {
+    return nullptr;
+}
+
+ID3D12Resource* OpticalFlowD3D12::GetInterpolatedResource(int) const {
+    return nullptr;
+}
+
+#endif
