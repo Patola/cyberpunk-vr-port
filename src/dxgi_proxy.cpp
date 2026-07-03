@@ -5759,6 +5759,13 @@ static uint32_t GetDiagnosticExecHookMask()
     constexpr uint32_t kMovement = 1u << 2;
     constexpr uint32_t kSettings = 1u << 3;
     constexpr uint32_t kAll = kCamera | kProjection | kMovement | kSettings;
+    auto applyPolicy = [&](uint32_t mask) {
+        if ((mask & kSettings) != 0 && !CPVR_ShouldInstallSettingsResHook()) {
+            Log("Proton compat: SettingsRes hook requested but disabled by policy. Set CPVR_ENABLE_SETTINGS_RES_HOOK=1 to force-enable.\n");
+            mask &= ~kSettings;
+        }
+        return mask;
+    };
 
     char value[128]{};
     const DWORD len = GetEnvironmentVariableA("CPVR_DIAG_EXEC_HOOKS", value, static_cast<DWORD>(sizeof(value)));
@@ -5766,17 +5773,13 @@ static uint32_t GetDiagnosticExecHookMask()
         if (GetAnyOpenXRSubmitEnabled() == 0) {
             return 0;
         }
-        uint32_t mask = kAll;
-        if (!CPVR_ShouldInstallSettingsResHook()) {
-            mask &= ~kSettings;
-        }
-        return mask;
+        return applyPolicy(kAll);
     }
     if (_stricmp(value, "0") == 0 || _stricmp(value, "none") == 0 || _stricmp(value, "off") == 0) {
         return 0;
     }
     if (_stricmp(value, "1") == 0 || _stricmp(value, "all") == 0 || _stricmp(value, "on") == 0) {
-        return kAll;
+        return applyPolicy(kAll);
     }
 
     uint32_t mask = 0;
@@ -5792,7 +5795,7 @@ static uint32_t GetDiagnosticExecHookMask()
             mask |= kSettings;
         }
     }
-    return mask;
+    return applyPolicy(mask);
 }
 
 DWORD WINAPI WorkerThread(LPVOID) {

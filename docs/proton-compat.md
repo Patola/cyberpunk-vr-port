@@ -78,7 +78,9 @@ then entered a black/stalled startup path.
 - `CPVR_DIAG_EXEC_HOOKS=...`: diagnostic override for executable patch hooks.
   If unset, normal policy is used. Set to `none`, `all`, or a separated list of
   `camera`, `projection`, `movement`, and `settings`. This is useful after an
-  upstream rebase to isolate which hook family regressed Proton startup.
+  upstream rebase to isolate which hook family regressed Proton startup. The
+  `settings` family still obeys `CPVR_ENABLE_SETTINGS_RES_HOOK`; set both
+  variables only when intentionally retesting the known-risky SettingsRes hook.
 
 ## AMD / non-CUDA behavior
 
